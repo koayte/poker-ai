@@ -8,6 +8,7 @@ import logging
 import time
 import traceback
 from typing import Any, Dict, Optional, Tuple, List
+from deprecated import deprecated
 
 import numpy as np
 import requests
@@ -240,7 +241,7 @@ time_used_0 = 0.0
 time_used_1 = 0.0
 time_used = [0.0] * NUM_PLAYERS
 
-
+@deprecated(reason='need to support')
 def play_hand(
     env: PokerEnv, 
     base_url_0: str, 
@@ -345,7 +346,7 @@ def play_hand(
 
     return {"bot0_reward": reward0, "bot1_reward": reward1}
 
-# TODO handle if there does not exist 6 players at the table
+# TODO handle if there exists less than 6 players at the table
 def play_hand(
     env: PokerEnv, 
     base_urls: List[str], # for 6 players
@@ -375,7 +376,6 @@ def play_hand(
     # Loop until hand terminates
     while not terminated:
         # TODO keep logs for bot history inside state
-        action_start = -1.0
         action = None
         for player, (obs, url) in enumerate(zip(observations, base_urls)):
             bot_payload = prepare_payload(obs, rewards[i], terminated, truncated, info)
