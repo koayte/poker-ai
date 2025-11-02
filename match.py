@@ -345,6 +345,7 @@ def play_hand(
 
     return {"bot0_reward": reward0, "bot1_reward": reward1}
 
+# TODO handle if there does not exist 6 players at the table
 def play_hand(
     env: PokerEnv, 
     base_urls: List[str], # for 6 players
