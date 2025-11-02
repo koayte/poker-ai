@@ -81,7 +81,8 @@ class PokerEnv(gym.Env):
         CHECK = 2
         CALL = 3
         DISCARD = 4
-        INVALID = 5
+        SELECT_HAND = 5
+        INVALID = 6
 
     def __init__(self, logger=None, small_blind_amount=1, num_hands=1):
         """
@@ -119,7 +120,7 @@ class PokerEnv(gym.Env):
             {
                 "street": spaces.Discrete(4),
                 "acting_agent": spaces.Discrete(2),
-                "my_cards": spaces.Tuple([cards_space for _ in range(2)]),
+                "my_cards": spaces.Tuple([cards_space for _ in range(5)]), # Each player gets 5 cards
                 "community_cards": spaces.Tuple([cards_space for _ in range(5)]),
                 "my_bet": spaces.Discrete(self.MAX_PLAYER_BET, start=1),
                 "opp_bet": spaces.Discrete(self.MAX_PLAYER_BET, start=1),
@@ -139,7 +140,15 @@ class PokerEnv(gym.Env):
         self.reset(seed=int.from_bytes(os.urandom(32)))
 
     def _get_valid_actions(self, player_num: int):
-        valid_actions = [1, 1, 1, 1, 1]
+
+        # card selection phase
+        if self.selection_phase:
+            valid_actions = [0] * (len(self.ActionType) - 1)
+            if player_num == self.acting_agent and self.chosen_pairs[player_num] is None:
+                valid_actions[self.ActionType.SELECT_HAND.value] = 1
+            return valid_actions
+
+        valid_actions = [1, 1, 1, 1, 1, 0]
         # You can't check if the other player has a larger bet
         if self.bets[player_num] < self.bets[1 - player_num]:
             valid_actions[self.ActionType.CHECK.value] = 0
@@ -157,6 +166,46 @@ class PokerEnv(gym.Env):
             valid_actions[self.ActionType.RAISE.value] = 0
 
         return valid_actions
+    
+    def _handle_hand_selection(self, action: tuple[int, int, int]):
+        """
+        Handle the pre-flop hand selection where players choose 2 cards from 5.
+        """
+        action_type, card_idx_1, card_idx_2 = action
+        p = self.acting_agent
+
+        # validate action
+        if action_type != self.ActionType.SELECT_HAND.value:
+            self.logger.error(f"Player {p} must select hand, chose action {action_type}; defaulting to (0,1)")
+            card_idx_1, card_idx_2 = 0, 1
+        if not (0 <= card_idx_1 < 5 and 0 <= card_idx_2 < 5 and card_idx_1 != card_idx_2):
+            self.logger.error(f"Invalid selection {card_idx_1},{card_idx_2}; defaulting to (0,1)")
+            card_idx_1, card_idx_2 = 0, 1
+
+        # record chosen pair as indices
+        self.chosen_pairs[p] = (card_idx_1, card_idx_2)
+
+        # mask unchosen three to -1; store their ids privately
+        keep = {card_idx_1, card_idx_2}
+        discards = []
+        for k in range(5):
+            if k not in keep:
+                c = self.player_cards[p][k]
+                if c != -1:
+                    discards.append(c)
+                self.player_cards[p][k] = -1
+        self.facedown_discards[p] = discards
+
+        # advance selection phase
+        if all(pair is not None for pair in self.chosen_pairs):
+            self.selection_phase = False
+            self.acting_agent = self.small_blind_player  # resume betting from SB
+        else:
+            self.acting_agent = 1 - p
+
+        # emit obs (no winner yet)
+        return self._get_obs(winner=None, invalid_action=False)
+
 
     def _get_single_player_obs(self, player_num: int):
         """
@@ -174,8 +223,8 @@ class PokerEnv(gym.Env):
             "community_cards": self.community_cards[:num_cards_to_reveal] + [-1 for _ in range(5 - num_cards_to_reveal)],
             "my_bet": self.bets[player_num],
             "opp_bet": self.bets[1 - player_num],
-            "opp_discarded_card": self.discarded_cards[1 - player_num],
-            "opp_drawn_card": self.drawn_cards[1 - player_num],
+            "opp_discarded_card": -1,      # Hidden
+            "opp_drawn_card": -1,          # Hidden
             "my_discarded_card": self.discarded_cards[player_num],
             "my_drawn_card": self.drawn_cards[player_num],
             "min_raise": self.min_raise,
@@ -242,8 +291,16 @@ class PokerEnv(gym.Env):
         - cards: a list of 52 cards to be used in the game
         """
         super().reset(seed=seed)
+
+        # Card selection state
+        self.selection_phase = True
+        self.chosen_pairs = [None, None]
+        self.facedown_discards = [[], []]
+
         self.street = 0
         self.bets = [0] * NUM_PLAYERS
+        self.discarded_cards = [-1, -1]
+        self.drawn_cards = [-1, -1]
 
         # Set default values first
         self.cards = np.arange(DECK_SIZE)
@@ -265,6 +322,7 @@ class PokerEnv(gym.Env):
         self.bets = [BLIND_AMOUNT] * NUM_PLAYERS
         self.min_raise = BLIND_AMOUNT
         self.last_street_bet = BLIND_AMOUNT
+
 
         obsListRaw = [self._get_single_player_obs(playerNum) for playerNum in range(NUM_PLAYERS)]
         obsListFiltered = tuple(obsItem for (obsItem, _) in obsListRaw)
@@ -322,6 +380,9 @@ class PokerEnv(gym.Env):
             - `raise_amount`: `int`, how much to raise, or 0 for a check or call
             - `card_to_discard`: `int`, index of the card which you would like to discard (0, or 1) or -1
         """
+        if self.selection_phase:
+            return self._handle_hand_selection(action)
+
         action_type, raise_amount, card_to_discard = action
         valid_actions = self._get_valid_actions(self.acting_agent)
         self.logger.debug(f"Action type: {action_type}, Valid actions: {valid_actions}, Street: {self.street}, Bets: {self.bets}")
