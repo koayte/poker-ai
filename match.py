@@ -157,12 +157,16 @@ class PayloadPreparer:
 
 class PokerMatch:
     """Manages a complete poker match between multiple agents"""
+    # TODO set up logging for errors and game state changes
+    # TODO implement the csv writer path
+    #   - define new headers for csv file
+    # TODO Handle when agenet disconnects and should continue gamne
+    
     def __init__(
         self,
         base_urls: List[str],
         logger: logging.Logger,
         team_names: Optional[List[str]] = None,
-        num_hands: int = 1000,
         csv_path: str = "./match.csv"
     ):
         
@@ -170,7 +174,6 @@ class PokerMatch:
         self.num_players = NUM_PLAYERS # NOTE might change later
         self.logger = logger
         self.team_names = team_names or [f"Player {i}" for i in range(self.num_players)]
-        self.num_hands = num_hands
         self.csv_path = csv_path
         
         self.env = PokerEnv()
@@ -183,6 +186,13 @@ class PokerMatch:
         # Initialize helpers
         self.api_client = AgentAPIClient(logger, self.failure_tracker)
     
+    def run(self, num_hands = 1000) -> MatchResult:
+        
+        for hand_number in num_hands:
+            self._play_hand(hand_number)
+        
+        return self._create_result('completed')
+            
     def _play_hand(self, hand_number: int):
         """Play a single hand of poker"""
         
@@ -278,6 +288,18 @@ class PokerMatch:
         for i, obs in enumerate(observations):
             obs["time_used"] = self.time_used[i]
             obs["time_left"] = TIME_LIMIT_SECONDS - self.time_used[i]
+    
+    def _create_result(
+        self,
+        status: str,
+        disqualified_player: Optional[int] = None,
+        error: Optional[str] = None
+    ) -> MatchResult:
+        """Create a standardized match result"""
+        # TODO Handle disconnected players
+        # should be ranked based on who disconnected first?
+        raise NotImplementedError()
+
 
 
 
