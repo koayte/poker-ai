@@ -22,7 +22,9 @@ GET_ACTION_ENDPOINT = "/get_action"
 SEND_OBS_ENDPOINT = "/post_observation"
 MAX_AGENT_FAILURES = 3
 
+
 class MatchResult(TypedDict):
+    # TODO change this to handle 6 players accordingly
     """Standardized match result structure"""
     status: str  # 'completed', 'timeout', or 'error'
     result: str  # 'win', 'loss', 'tie', or 'invalid'
@@ -213,6 +215,7 @@ class PokerMatch:
             self._broadcast_to_inactive_players(observations, rewards, terminated, truncated, info)
             
             # Step environment
+            # NOTE in the case that a player dies how should `PokerEnv` handle it? -dylan 
             observations, rewards, terminated, truncated, info = self.env.step(action=action["action"])
             info["hand_number"] = hand_number
             self._update_time_info(observations)
@@ -299,8 +302,48 @@ class PokerMatch:
         # TODO Handle disconnected players
         # should be ranked based on who disconnected first?
         raise NotImplementedError()
+    
+    def _handle_agent_failure(player_id: int):
+        # TODO
+        raise NotImplementedError()
+        
 
 
+
+def run_api_match(
+    base_urls: List[str],
+    logger: logging.Logger,
+    num_hands: int = 1000,
+    csv_path: str = "./match.csv",
+    team_names: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Run a match between multiple API-based agents.
+    
+    Args:
+        base_urls: List of base URLs for each agent's API
+        logger: Logger instance
+        num_hands: Number of hands to play
+        csv_path: Path to save match CSV log
+        team_names: Optional list of team names for logging
+    
+    Returns:
+        Dictionary containing match results
+    """
+    assert(len(base_urls) == NUM_PLAYERS)
+    
+    match = PokerMatch(base_urls, logger, team_names, num_hands, csv_path)
+    result = match.run()
+    
+    # Convert dataclass to dict for backward compatibility
+    # TODO change this to correct match result
+    return {
+        "status": result.status,
+        "result": result.result,
+        "rewards": result.rewards,
+        "time_used": result.time_used,
+        **({"error": result.error} if result.error else {})
+    }
 
 
 # Create a global instance
@@ -312,7 +355,7 @@ def get_street_name(street_num: int) -> str:
     street_names = {0: "Pre-Flop", 1: "Flop", 2: "Turn", 3: "River"}
     return street_names.get(street_num, f"Unknown-{street_num}")
 
-@deprecated
+@deprecated(category=DeprecationWarning)
 def prepare_payload(
     obs: Dict[str, Any],
     reward: float,
@@ -358,7 +401,7 @@ def prepare_payload(
         "info": _convert_numpy(info),
     }
 
-
+@deprecated(category=DeprecationWarning)
 def call_agent_api(
     method: str,
     base_url: str,
@@ -416,7 +459,7 @@ def call_agent_api(
 bankrolls = [0] * NUM_PLAYERS  # Track total bankrolls across all hands
 
 # TODO: fix csv writer once, 6 player support is finished
-@deprecated
+@deprecated(category=DeprecationWarning)
 def run_api_match(
     base_url_0: str,
     base_url_1: str,
@@ -498,7 +541,7 @@ time_used_1 = 0.0
 time_used = [0.0] * NUM_PLAYERS
 
 # TODO handle if there exists less than 6 players at the table
-@deprecated
+@deprecated(category=DeprecationWarning)
 def play_hand(
     env: PokerEnv, 
     base_urls: List[str], # for 6 players
