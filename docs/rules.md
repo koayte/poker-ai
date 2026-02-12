@@ -43,9 +43,7 @@ Our tournament uses a modified version of Texas Hold'em with unique features:
 
 ### Card Deck
 
-- Modified 27-card deck
-- Uses cards 2-9 and A from ♦♥♠ suits only
-- No face cards (J,Q,K) or clubs (♣)
+- A standard 52 card deck. No jokers
 
 ### Hand Rankings
 
@@ -56,39 +54,43 @@ From strongest to weakest:
    - Example: A♦ 2♦ 3♦ 4♦ 5♦ (Ace can be low)
    - Example: 6♦ 7♦ 8♦ 9♦ A♦ (Ace can be high)
 
-2. **Full House**: Three of a kind plus a pair
+2. **Four of a Kind**: Four cards of the same rank
+   - Example: 7♣ 7♦ 7♥ 7♠ 4♥
+
+3. **Full House**: Three of a kind plus a pair
    - Example: 7♦ 7♥ 7♠ 4♦ 4♥
 
-3. **Flush**: Five cards of the same suit
+4. **Flush**: Five cards of the same suit
    - Example: 2♦ 4♦ 6♦ 8♦ 9♦
 
-4. **Straight**: Five consecutive cards of any suit
+5. **Straight**: Five consecutive cards of any suit
    - Example: 5♦ 6♥ 7♦ 8♠ 9♥
    - Example: A♦ 2♥ 3♠ 4♦ 5♥ (Ace can be low)
    - Example: 6♦ 7♥ 8♠ 9♦ A♥ (Ace can be high)
 
-5. **Three of a Kind**: Three cards of the same rank
+6. **Three of a Kind**: Three cards of the same rank
    - Example: 8♦ 8♥ 8♠ 2♦ 3♥
 
-6. **Two Pair**: Two different pairs
+7. **Two Pair**: Two different pairs
    - Example: 9♦ 9♥ 3♦ 3♥ 8♠
 
-7. **One Pair**: Two cards of the same rank
+8. **One Pair**: Two cards of the same rank
    - Example: A♦ A♥ 7♦ 4♠ 2♥
 
-8. **High Card**: Highest single card
+9. **High Card**: Highest single card
    - Example: A♦ 8♠ 6♥ 4♦ 2♠
 
 > **Special Ace Rule**: The Ace (A) can be used as either high (above 9) or low (below 2) when forming straights and straight flushes.
 >
 > Note: Four-of-a-kind is impossible with this deck configuration since there are only three suits.
 
-### Redraw Rule
+### Discard Rule
 
-- Each player may discard and redraw one card per hand
-- Must be done before the turn card
-- Discarded card and drawn card are revealed to opponent
-- Discarded card removed from play for that hand
+- Each player will initially draw 5 cards
+- After the flop is dealt out, players will discard down to 2 cards in betting order
+- Once all players have made discards, flop betting will start
+- Discarded cards are revealed to the opponent
+- Discarded cards are removed from play for that hand
 
 ## Tournament Structure
 
