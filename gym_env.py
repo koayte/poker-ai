@@ -271,7 +271,9 @@ class PokerEnv(gym.Env):
         return (obs0, obs1), reward, terminated, truncated, info
 
     def _draw_card(self):
-        return self.cards.pop()
+        drawn_card = self.cards[0]
+        self.cards = self.cards[1:]
+        return drawn_card
 
     def reset(self, *, seed=None, options=None):
         #you can merge these variables in if the class vars changes
