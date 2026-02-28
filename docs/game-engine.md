@@ -71,20 +71,20 @@ Each player receives an observation dictionary containing:
 
 ## Card Representation
 
-Cards are represented as integers from 0-26:
+The tournament uses a **27-card deck**: ranks 2–9 and A, suits ♦♥♠ only (no face cards, no clubs). Cards are represented as integers from 0–26:
 
 ```python
 RANKS = "23456789A"
 SUITS = "dhs"  # diamonds, hearts, spades
 ```
 
-Example card mappings:
+Card index is `rank_index * 3 + suit_index`. Example mappings:
 
 - 0 = 2♦
-- 9 = A♦
-- 10 = 2♥
-- 19 = A♥
-- 20 = 2♠
+- 9 = 5♦
+- 10 = 5♥
+- 19 = 8♥
+- 20 = 8♠
 - 26 = A♠
 
 ## Game Flow
@@ -112,7 +112,7 @@ obs, reward, terminated, truncated, info = env.step((action_type, raise_amount, 
 
 ### 4. Hand Evaluation
 
-Uses the `treys` library to evaluate final hands:
+Uses the `treys` library to evaluate final hands (adapted for the 27-card deck; four-of-a-kind is impossible):
 
 ```python
 evaluator = Evaluator()
@@ -127,10 +127,10 @@ hand_rank = evaluator.evaluate(player_cards, board_cards)
 ```python
 rigged_deck = [25, 14, 1, 4, 8, 16, 9, 11, 23]
 actions = [
-    (ActionType.CALL.value, 0, -1),   # P0 calls big blind
-    (ActionType.CHECK.value, 0, -1),   # P1 checks
-    (ActionType.RAISE.value, 2, -1),   # P0 raises 2
-    (ActionType.CALL.value, 0, -1),    # P1 calls
+    (ActionType.CALL.value, 0, -1, -1),   # P0 calls big blind
+    (ActionType.CHECK.value, 0, -1, -1),   # P1 checks
+    (ActionType.RAISE.value, 2, -1, -1),   # P0 raises 2
+    (ActionType.CALL.value, 0, -1, -1),    # P1 calls
     # ... continues to showdown
 ]
 ```
@@ -140,9 +140,9 @@ actions = [
 ```python
 rigged_deck = [24, 10, 14, 5]
 actions = [
-    (ActionType.CALL.value, 0, -1),     # P0 calls big blind
-    (ActionType.RAISE.value, 98, -1),    # P1 raises to max
-    (ActionType.FOLD.value, 0, -1),      # P0 folds
+    (ActionType.CALL.value, 0, -1, -1),     # P0 calls big blind
+    (ActionType.RAISE.value, 98, -1, -1),   # P1 raises to max
+    (ActionType.FOLD.value, 0, -1, -1),     # P0 folds
 ]
 ```
 

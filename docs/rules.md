@@ -1,6 +1,6 @@
 # Tournament Rules
 
-> For technical implementation details, see the [Gym Environment Documentation](/docs/gym-env).
+> For technical implementation details, see the [Game Engine Documentation](/docs/game-engine).
 > For common poker terms, see the [Terminology Guide](/docs/terminology).
 
 ## Bot Technical Requirements
@@ -19,7 +19,7 @@ Compute resources will increase in phases throughout the tournament:
    - 4GB RAM per bot
    - 1000 seconds time limit per match
 
-3. **Final Phase** (March 18 - March 20, 11:59PM EST):
+3. **Phase 3** (March 18 - March 20, 11:59PM EST):
    - 4 vCPU
    - 8GB RAM per bot
    - 1500 seconds time limit per match
@@ -35,7 +35,7 @@ All bots run in a Python 3.12 runtime environment on ARM64 architecture (AWS Gra
   - The bot automatically forfeits the match
   - The opponent is awarded the win
 
-> **Important**: With 1000 hands per match, bots should aim to use their time efficiently to avoid depleting their time bank. For example, in the final phase with 1500 seconds, this means using no more than 1.5 seconds per hand on average.
+> **Important**: With 1000 hands per match, bots should aim to use their time efficiently to avoid depleting their time bank. For example, in Phase 3 with 1500 seconds, this means using no more than 1.5 seconds per hand on average.
 
 ## Game Variant
 

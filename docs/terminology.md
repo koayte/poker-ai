@@ -1,7 +1,7 @@
 # Poker Terminology
 
 > For complete game rules and tournament structure, see the [Rules Documentation](/docs/rules).
-> For technical implementation details, see the [Gym Environment Documentation](/docs/gym-env).
+> For technical implementation details, see the [Game Engine Documentation](/docs/game-engine).
 
 ## Core Game Structure
 
@@ -24,7 +24,7 @@ A street is one complete round of betting. This variant uses 4 streets, with a m
 
 - **Pre-flop** (Street 0):
   - Each player is dealt **5 cards**
-  - Small blind (10 chips) and big blind (20 chips) are posted
+  - Small blind (1 chip) and big blind (2 chips) are posted
   - First round of betting occurs
 
 - **Flop** (Street 1):
@@ -44,8 +44,8 @@ A street is one complete round of betting. This variant uses 4 streets, with a m
 
 ### Positions
 
-- **Small Blind (SB)**: Player 0, posts 10 chips before cards are dealt
-- **Big Blind (BB)**: Player 1, posts 20 chips before cards are dealt
+- **Small Blind (SB)**: Player 0, posts 1 chip before cards are dealt
+- **Big Blind (BB)**: Player 1, posts 2 chips before cards are dealt
 
 ### Actions
 
@@ -55,7 +55,7 @@ A street is one complete round of betting. This variant uses 4 streets, with a m
 - **Raise**: Increase the current bet amount
 - **Discard**: On the flop, choose 2 cards to keep from your 5 hole cards; the other 3 are discarded and revealed to the opponent (tournament-specific rule)
 
-> See the [Gym Environment Documentation](/docs/gym-env#action-space) for technical implementation details.
+> See the [Game Engine Documentation](/docs/game-engine#action-space) for technical implementation details.
 
 ## Hand Rankings
 
@@ -88,9 +88,9 @@ The collection of possible hands an opponent might have based on their actions.
 
 For technical details about how the game engine represents and handles:
 
-- [Card Representation](/docs/gym-env#card-representation)
-- [Action Space](/docs/gym-env#action-space)
-- [Valid Actions](/docs/gym-env#observation-space)
+- [Card Representation](/docs/game-engine#card-representation)
+- [Action Space](/docs/game-engine#action-space)
+- [Observation Space](/docs/game-engine#observation-space)
 
 The following terms are commonly used in the API:
 

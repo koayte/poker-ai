@@ -25,7 +25,7 @@ submission/             # Folder name must be exactly "submission"
 
 1. Ensure all your code is inside the `submission` folder
 2. Navigate to the [bots upload page](/bots/upload)
-3. Drag and drop your `starter` folder onto the upload area
+3. Drag and drop your `submission` folder onto the upload area
 
 ## After Uploading
 
