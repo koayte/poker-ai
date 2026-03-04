@@ -11,10 +11,14 @@ class FoldAgent(Agent):
         return "FoldAgent"
 
     def act(self, observation, reward, terminated, truncated, info):
-        action_type = action_types.FOLD.value
-        raise_amount = 0
-        card_to_discard = -1
-        return action_type, raise_amount, card_to_discard
+        valid_actions = observation["valid_actions"]
+
+        # Mandatory discard phase: keep first two cards
+        if valid_actions[action_types.DISCARD.value]:
+            return (action_types.DISCARD.value, 0, 0, 1)
+
+        # Otherwise always fold
+        return (action_types.FOLD.value, 0, 0, 0)
 
 
 class CallingStationAgent(Agent):
@@ -22,13 +26,19 @@ class CallingStationAgent(Agent):
         return "CallingStationAgent"
 
     def act(self, observation, reward, terminated, truncated, info):
-        if observation["valid_actions"][action_types.CALL.value]:
+        valid_actions = observation["valid_actions"]
+
+        # Mandatory discard phase: keep first two cards
+        if valid_actions[action_types.DISCARD.value]:
+            return (action_types.DISCARD.value, 0, 0, 1)
+
+        # Otherwise, classic calling station: call if possible, else check
+        if valid_actions[action_types.CALL.value]:
             action_type = action_types.CALL.value
         else:
             action_type = action_types.CHECK.value
-        raise_amount = 0
-        card_to_discard = -1
-        return action_type, raise_amount, card_to_discard
+
+        return (action_type, 0, 0, 0)
 
 
 class AllInAgent(Agent):
@@ -36,23 +46,28 @@ class AllInAgent(Agent):
         return "AllInAgent"
 
     def act(self, observation, reward, terminated, truncated, info):
+        valid_actions = observation["valid_actions"]
+
+        # Mandatory discard phase: keep first two cards
+        if valid_actions[action_types.DISCARD.value]:
+            return (action_types.DISCARD.value, 0, 0, 1)
+
         if observation["street"] == 0:
             self.logger.debug(f"Hole cards: {[int_to_card(c) for c in observation['my_cards']]}")
 
-        if observation["valid_actions"][action_types.RAISE.value]:
+        if valid_actions[action_types.RAISE.value]:
             action_type = action_types.RAISE.value
             raise_amount = observation["max_raise"]
             if raise_amount > 20:
                 self.logger.info(f"Going all-in for {raise_amount}")
-        elif observation["valid_actions"][action_types.CALL.value]:
+        elif valid_actions[action_types.CALL.value]:
             action_type = action_types.CALL.value
             raise_amount = 0
         else:
             action_type = action_types.CHECK.value
             raise_amount = 0
 
-        card_to_discard = -1
-        return action_type, raise_amount, card_to_discard
+        return (action_type, raise_amount, 0, 0)
 
 
 class RandomAgent(Agent):

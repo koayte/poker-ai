@@ -2,6 +2,7 @@
 Basic Test Suite for PlayerAgent which checks that it never does an invalid action
 """
 
+from ast import Call
 import importlib.util
 import multiprocessing
 import os
@@ -12,7 +13,7 @@ from logging import getLogger
 from typing import Optional, Type
 
 from agents.agent import Agent
-from agents.test_agents import RandomAgent
+from agents.test_agents import FoldAgent, CallingStationAgent, AllInAgent, RandomAgent
 from match import run_api_match
 
 NUM_HANDS = 5
@@ -141,7 +142,7 @@ def main():
 
     test_results = {"games_completed": 0, "runtime_errors": 0, "timeout_errors": 0}
 
-    test_agents = [RandomAgent]
+    test_agents = [FoldAgent, CallingStationAgent, AllInAgent, RandomAgent]
 
     for test_agent_class in test_agents:
         print(f"\nTesting user bot against {test_agent_class.__name__}")
