@@ -314,7 +314,7 @@ def play_hand(
             return [env.int_card_to_str(c) for c in cards_list if c != -1]
 
         num_board_cards = 0 if obs0["street"] == 0 else obs0["street"] + 2
-        # Log action
+        # Log action using pre-step observations; we'll adjust the action_type after stepping if it was invalid.
         current_state = {
             "hand_number": hand_number,
             "street": get_street_name(obs0["street"]),
@@ -331,12 +331,16 @@ def play_hand(
             "action_type": action_type.name,
             "action_amount": act_amount,
             "action_keep_1": act_keep1,
-            "action_keep_2": act_keep2
+            "action_keep_2": act_keep2,
         }
-        writer.writerow(current_state)
 
         # Step environment
         (obs0, obs1), (reward0, reward1), terminated, truncated, info = env.step(action=action["action"])
+        # If the engine treated this move as invalid (auto-fold), record it as a FOLD in the CSV.
+        if info.get("invalid_action"):
+            current_state["action_type"] = PokerEnv.ActionType.FOLD.name
+
+        writer.writerow(current_state)
         info["hand_number"] = hand_number  # Maintain hand number after each step
         
         obs0["time_used"] = time_used_0

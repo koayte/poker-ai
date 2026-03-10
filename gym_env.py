@@ -214,16 +214,16 @@ class PokerEnv(gym.Env):
         truncated = False
 
         is_showdown = terminated and self.street > 3
-        info = (
-            {
-                "player_0_cards": info0["player_cards"],
-                "player_1_cards": info1["player_cards"],
-                "community_cards": info0["community_cards"],
-                "invalid_action": invalid_action,
-            }
-            if is_showdown
-            else {}
-        )
+        # Always include invalid_action flag so callers can see when an invalid move was treated as a fold.
+        info: dict[str, object] = {"invalid_action": invalid_action}
+        if is_showdown:
+            info.update(
+                {
+                    "player_0_cards": info0["player_cards"],
+                    "player_1_cards": info1["player_cards"],
+                    "community_cards": info0["community_cards"],
+                }
+            )
 
         return (obs0, obs1), reward, terminated, truncated, info
 
