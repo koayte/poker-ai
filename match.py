@@ -102,6 +102,10 @@ def prepare_payload(
     }
 
 
+# Default action when get_action API fails (fold): [ActionType.FOLD, amount, keep1, keep2]
+DEFAULT_ACTION_FOLD = [PokerEnv.ActionType.FOLD.value, 0, 0, 0]
+
+
 def call_agent_api(
     method: str,
     base_url: str,
@@ -109,9 +113,14 @@ def call_agent_api(
     payload: Dict[str, Any],
     logger: logging.Logger,
     player_id: int,
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """
     Make an API call to an agent with retry logic and failure tracking.
+
+    On failure after retries: records the failure. If this is the 3rd failure for
+    this player (or both have failed 3 times), raises AgentFailure so the match
+    ends and the other team wins. Otherwise returns None so the caller uses the
+    default action (fold for get_action, no-op for post_observation).
 
     Args:
         method (str): The HTTP method to use.
@@ -122,11 +131,11 @@ def call_agent_api(
         player_id (int): ID of the player (0 or 1).
 
     Returns:
-        Dict[str, Any]: The JSON response from the API.
+        Dict[str, Any]: The JSON response from the API, or None on 1st/2nd failure
+        (caller should use default: fold for get_action, skip for post_observation).
 
     Raises:
-        TimeoutError: If the player exceeds their time limit.
-        AgentFailure: If both players are failing or one player consistently fails.
+        AgentFailure: If this player has failed 3 times or both players have.
     """
     max_retries = 5
     base_delay = 1
@@ -153,9 +162,9 @@ def call_agent_api(
                 time.sleep(delay)
 
     except Exception as e:
-        failure_tracker.record_failure(player_id)
+        failure_tracker.record_failure(player_id)  # Raises AgentFailure on 3rd failure
         logger.error(f"Bot {player_id} failed API call: {str(e)}")
-        raise
+        return None
 
 
 bankrolls = [0, 0]  # Track total bankrolls across all hands
@@ -283,10 +292,14 @@ def play_hand(
         observer_url = base_url_1 if current_player == 0 else base_url_0
 
         action_start = time.time()
-        action = call_agent_api("GET", current_url, GET_ACTION_ENDPOINT, current_payload, logger, current_player)
+        action_response = call_agent_api("GET", current_url, GET_ACTION_ENDPOINT, current_payload, logger, current_player)
         action_duration = time.time() - action_start
 
-        raw_action = action["action"] # Expecting [Type, Amount, Idx1, Idx2]
+        if action_response is None:
+            action = {"action": DEFAULT_ACTION_FOLD}
+        else:
+            action = action_response
+        raw_action = action["action"]  # Expecting [Type, Amount, Idx1, Idx2]
         act_type_int = raw_action[0]
         act_amount = raw_action[1]
         act_keep1 = raw_action[2]
@@ -307,7 +320,7 @@ def play_hand(
         
             bot_1_last_move = action_type
 
-        # Notify other player
+        # Notify other player (on API failure we use default: no-op and keep playing)
         call_agent_api("POST", observer_url, SEND_OBS_ENDPOINT, observer_payload, logger, 1 - current_player)
 
         def fmt_cards(cards_list):
