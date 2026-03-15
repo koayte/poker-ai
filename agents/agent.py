@@ -25,6 +25,8 @@ class Observation(TypedDict):
     time_used: float
     time_left: float
     opp_last_action: str
+    pot_size: int
+    blind_position: int
 
 
 class ActionRequest(BaseModel):
