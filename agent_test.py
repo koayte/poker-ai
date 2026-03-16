@@ -17,7 +17,7 @@ from agents.test_agents import FoldAgent, CallingStationAgent, AllInAgent, Rando
 from match import run_api_match
 
 NUM_HANDS = 5
-TIME_PER_HAND = 5
+TIME_PER_HAND = 25
 
 
 def verify_submission() -> Optional[str]:
