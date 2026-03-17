@@ -19,7 +19,8 @@ class PlayerAgent(Agent):
 
         # Match-level configuration for conservative lock-in strategy.
         self.total_hands = 1000
-        self.max_fold_loss_per_hand = 2
+        # If we fold at first legal action each hand, worst-case loss is the posted big blind.
+        self.max_fold_loss_per_hand = 1.5
 
         self.ranks = "23456789A"
         self.suits = "dhs"
@@ -68,6 +69,11 @@ class PlayerAgent(Agent):
 
         self.cumulative_profit = 0
         self.lock_in_mode = False
+
+        # Dynamic aggression controls to prevent opponents from coasting to lock-in.
+        self.early_aggression_hands = 180
+        self.anti_lock_margin = 0.80
+        self.anti_lock_min_remaining_hands = 80
 
         self._load_offline_profile()
         self._apply_offline_profile()
@@ -193,6 +199,7 @@ class PlayerAgent(Agent):
         treys_board = list(map(self.int_to_card, board5))
         return self.evaluator.evaluate(treys_hand, treys_board)
 
+    # 5. Opponent discard signal 
     def _opp_discard_strength_shift(self, opp_discarded_cards):
         shown = [c for c in opp_discarded_cards if c != -1]
         if len(shown) != 3:
@@ -201,11 +208,16 @@ class PlayerAgent(Agent):
         avg_rank = sum(self._card_rank_value(c) for c in shown) / 3.0
         # High discarded ranks suggest opponent likely kept weaker structure.
         if avg_rank >= 9.0:
+            # If opponent discarded mostly high cards, may have retained weak set
+            # Increase equity slightly 
             return 0.015
         if avg_rank <= 5.0:
+            # If opponent discarded mostly low cards, may have retained stronger set
+            # Decrease equity slightly
             return -0.01
         return 0.0
-
+    
+    # Helper, used in preflop simulation to approximate both players' discard behavior later 
     def _pick_best_two_from_five_given_flop(self, hole5, flop3):
         best_pair = (hole5[0], hole5[1])
         best_score = None
@@ -401,6 +413,53 @@ class PlayerAgent(Agent):
             "bluff_freq": bluff_freq,
         }
 
+    def _phase_adjustments(self, info, observation):
+        hand_number = info.get("hand_number", 0)
+        remaining_hands = max(0, self.total_hands - hand_number)
+
+        # Estimate opponent's lock-in threshold from our perspective.
+        opponent_profit = -self.cumulative_profit
+        opponent_safe_margin = self.max_fold_loss_per_hand * remaining_hands
+        opponent_near_lock = (
+            remaining_hands >= self.anti_lock_min_remaining_hands
+            and opponent_profit > self.anti_lock_margin * opponent_safe_margin
+        )
+
+        early_pressure = hand_number < self.early_aggression_hands
+
+        phase = {
+            "early_pressure": early_pressure,
+            "anti_lock_attack": opponent_near_lock,
+            "raise_shift": 0.0,
+            "call_shift": 0.0,
+            "bluff_low_shift": 0.0,
+            "bluff_high_shift": 0.0,
+            "size_boost": 0.0,
+        }
+
+        if early_pressure:
+            phase["raise_shift"] -= 0.03
+            phase["bluff_low_shift"] -= 0.02
+            phase["bluff_high_shift"] += 0.03
+            phase["size_boost"] += 0.10
+
+        if opponent_near_lock:
+            # Apply stronger pressure before opponent can safely fold out match.
+            phase["raise_shift"] -= 0.05
+            phase["call_shift"] += 0.01
+            phase["bluff_low_shift"] -= 0.02
+            phase["bluff_high_shift"] += 0.04
+            phase["size_boost"] += 0.15
+
+        # Clamp for stability.
+        phase["raise_shift"] = self._bounded(phase["raise_shift"], -0.10, 0.02)
+        phase["call_shift"] = self._bounded(phase["call_shift"], -0.05, 0.03)
+        phase["bluff_low_shift"] = self._bounded(phase["bluff_low_shift"], -0.05, 0.02)
+        phase["bluff_high_shift"] = self._bounded(phase["bluff_high_shift"], -0.02, 0.08)
+        phase["size_boost"] = self._bounded(phase["size_boost"], 0.0, 0.30)
+
+        return phase
+
     def _update_opponent_action_signal(self, observation):
         # On our turn, compare to the previous observation from our prior turn.
         if self.prev_obs is None:
@@ -460,10 +519,12 @@ class PlayerAgent(Agent):
         self.hand_raised = False
         self.opp_aggressive_this_hand = False
 
+        # Enter lock-in only when lead is larger than worst-case remaining losses,
+        # assuming we fold immediately on every future hand.
         remaining_hands = max(0, self.total_hands - hand_number)
         safe_margin = self.max_fold_loss_per_hand * remaining_hands
-        if self.cumulative_profit > safe_margin:
-            self.lock_in_mode = True
+        # Recompute lock-in every hand (reversible), so we don't get stuck in fold mode.
+        self.lock_in_mode = self.cumulative_profit > safe_margin
 
     def act(self, observation, reward, terminated, truncated, info):
         self._start_new_hand_if_needed(info)
@@ -520,15 +581,31 @@ class PlayerAgent(Agent):
 
         th = self.base_thresholds.get(street, self.base_thresholds[3]).copy()
         adj = self._opponent_adjustments()
+        phase = self._phase_adjustments(info, observation)
         th["raise"] += adj["raise_shift"]
         th["call"] += adj["call_shift"]
+        th["raise"] += phase["raise_shift"]
+        th["call"] += phase["call_shift"]
         bluff_low, bluff_high = th["bluff"]
         bluff_low += adj["bluff_shift"]
         bluff_high += adj["bluff_shift"]
+        bluff_low += phase["bluff_low_shift"]
+        bluff_high += phase["bluff_high_shift"]
+        bluff_low = self._bounded(bluff_low, 0.15, 0.70)
+        bluff_high = self._bounded(bluff_high, bluff_low, 0.90)
+        th["raise"] = self._bounded(th["raise"], 0.45, 0.90)
+        th["call"] = self._bounded(th["call"], 0.20, 0.80)
 
         # Strong value raise.
         if valid_actions[self.action_types.RAISE.value] and equity >= th["raise"]:
             raise_amount = self._safe_raise_amount(observation, equity)
+            if phase["size_boost"] > 0 and raise_amount > 0:
+                min_raise = observation["min_raise"]
+                max_raise = observation["max_raise"]
+                if min_raise > max_raise:
+                    min_raise = max_raise
+                boosted = int(raise_amount + phase["size_boost"] * max(0, max_raise - min_raise))
+                raise_amount = max(min_raise, min(max_raise, boosted))
             if raise_amount > 0:
                 self.hand_raised = True
                 self.prev_obs = observation
@@ -539,6 +616,8 @@ class PlayerAgent(Agent):
             valid_actions[self.action_types.RAISE.value]
             and bluff_low <= equity <= bluff_high
             and adj["fold_to_raise"] > 0.52
+            and (self.stats["hands"] >= 10 or phase["early_pressure"])
+            and (street <= 2 or phase["anti_lock_attack"])
             and continue_cost == 0
         ):
             raise_amount = max(observation["min_raise"], min(observation["max_raise"], observation["min_raise"]))
