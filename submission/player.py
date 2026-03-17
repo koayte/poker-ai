@@ -1,16 +1,25 @@
 import itertools
+import json
+import os
 import random
 import time
 
 from agents.agent import Agent
 from gym_env import PokerEnv
+from gym_env import WrappedEval
 
 
 class PlayerAgent(Agent):
     def __init__(self, stream: bool = True):
         super().__init__(stream)
         self.action_types = PokerEnv.ActionType
+        self.evaluator = WrappedEval()
+        self.int_to_card = PokerEnv.int_to_card
         self.rng = random.Random()
+
+        # Match-level configuration for conservative lock-in strategy.
+        self.total_hands = 1000
+        self.max_fold_loss_per_hand = 2
 
         self.ranks = "23456789A"
         self.suits = "dhs"
@@ -30,6 +39,16 @@ class PlayerAgent(Agent):
             3: {"raise": 0.60, "call": 0.40, "bluff": (0.24, 0.34)},
         }
 
+        self.offline_profile = {}
+        self.offline_prior = {
+            "fold_to_raise": 0.35,
+            "aggression": 0.30,
+            "bluff_freq": 0.12,
+            "raise_samples": 20,
+            "action_samples": 80,
+            "showdown_samples": 20,
+        }
+
         self.equity_cache = {}
         self.current_hand_number = None
         self.prev_obs = None
@@ -47,8 +66,98 @@ class PlayerAgent(Agent):
             "opp_bluff_showdowns": 0,
         }
 
+        self.cumulative_profit = 0
+        self.lock_in_mode = False
+
+        self._load_offline_profile()
+        self._apply_offline_profile()
+
     def __name__(self):
         return "PlayerAgent"
+
+    @staticmethod
+    def _bounded(x, lo, hi):
+        return max(lo, min(hi, x))
+
+    def _load_offline_profile(self):
+        profile_path = os.path.join(os.path.dirname(__file__), "offline_profile.json")
+        if not os.path.exists(profile_path):
+            self.logger.info("No offline profile found at %s", profile_path)
+            return
+
+        try:
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+        except Exception as exc:
+            self.logger.warning("Failed to load offline profile (%s)", exc)
+            return
+
+        if not isinstance(profile, dict):
+            self.logger.warning("Offline profile format invalid; expected object")
+            return
+
+        self.offline_profile = profile
+
+        # Optional learned baseline thresholds by street.
+        learned_thresholds = profile.get("base_thresholds")
+        if isinstance(learned_thresholds, dict):
+            for k, val in learned_thresholds.items():
+                try:
+                    street = int(k)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(val, dict):
+                    continue
+
+                base = self.base_thresholds.get(street)
+                if base is None:
+                    continue
+
+                if "raise" in val:
+                    base["raise"] = float(self._bounded(float(val["raise"]), 0.45, 0.90))
+                if "call" in val:
+                    base["call"] = float(self._bounded(float(val["call"]), 0.20, 0.80))
+                if "bluff" in val and isinstance(val["bluff"], list) and len(val["bluff"]) == 2:
+                    low = float(self._bounded(float(val["bluff"][0]), 0.10, 0.80))
+                    high = float(self._bounded(float(val["bluff"][1]), low, 0.90))
+                    base["bluff"] = (low, high)
+
+        # Optional learned simulation budgets.
+        sims = profile.get("simulation_budgets", {})
+        if isinstance(sims, dict):
+            if "discard" in sims:
+                self.simulations_discard = int(self._bounded(int(sims["discard"]), 80, 700))
+            if "bet" in sims:
+                self.simulations_bet = int(self._bounded(int(sims["bet"]), 80, 700))
+            if "preflop" in sims:
+                self.simulations_preflop = int(self._bounded(int(sims["preflop"]), 40, 400))
+
+        # Learned opponent priors (used as pseudocounts at match start).
+        priors = profile.get("opponent_priors", {})
+        if isinstance(priors, dict):
+            for key in self.offline_prior:
+                if key in priors:
+                    self.offline_prior[key] = priors[key]
+
+    def _apply_offline_profile(self):
+        # Convert learned priors into pseudocounts so adaptation starts informed.
+        try:
+            raise_samples = max(1, int(self.offline_prior.get("raise_samples", 20)))
+            action_samples = max(1, int(self.offline_prior.get("action_samples", 80)))
+            showdown_samples = max(1, int(self.offline_prior.get("showdown_samples", 20)))
+
+            fold_to_raise = float(self._bounded(float(self.offline_prior.get("fold_to_raise", 0.35)), 0.01, 0.99))
+            aggression = float(self._bounded(float(self.offline_prior.get("aggression", 0.30)), 0.01, 0.99))
+            bluff_freq = float(self._bounded(float(self.offline_prior.get("bluff_freq", 0.12)), 0.0, 0.90))
+
+            self.stats["raise_hands"] = raise_samples
+            self.stats["opp_fold_after_our_raise"] = int(round(raise_samples * fold_to_raise))
+            self.stats["opp_actions_seen"] = action_samples
+            self.stats["opp_aggressive_actions"] = int(round(action_samples * aggression))
+            self.stats["showdowns"] = showdown_samples
+            self.stats["opp_bluff_showdowns"] = int(round(showdown_samples * bluff_freq))
+        except Exception as exc:
+            self.logger.warning("Failed to apply offline profile priors (%s)", exc)
 
     def _card_rank_value(self, card_int: int) -> int:
         return self.rank_to_value[self.ranks[card_int % 9]]
@@ -75,75 +184,14 @@ class PlayerAgent(Agent):
     def _remaining_deck(self, known_cards):
         return [c for c in self.full_deck if c not in known_cards]
 
-    def _straight_high(self, rank_values):
-        unique = set(rank_values)
-        straights = [
-            ({14, 2, 3, 4, 5}, 5),
-            ({2, 3, 4, 5, 6}, 6),
-            ({3, 4, 5, 6, 7}, 7),
-            ({4, 5, 6, 7, 8}, 8),
-            ({5, 6, 7, 8, 9}, 9),
-            ({6, 7, 8, 9, 14}, 14),
-        ]
-        best = None
-        for needed, high in straights:
-            if needed.issubset(unique):
-                best = high if best is None else max(best, high)
-        return best
-
     def _score_five_card(self, cards5):
-        ranks = [self._card_rank_value(c) for c in cards5]
-        suits = [self._card_suit_index(c) for c in cards5]
-
-        rank_counts = {}
-        for r in ranks:
-            rank_counts[r] = rank_counts.get(r, 0) + 1
-
-        groups = sorted(((cnt, r) for r, cnt in rank_counts.items()), reverse=True)
-        is_flush = len(set(suits)) == 1
-        straight_high = self._straight_high(ranks)
-        is_straight = straight_high is not None
-
-        # Category order: 7 SF, 6 FH, 5 F, 4 S, 3 Trips, 2 TwoPair, 1 Pair, 0 High.
-        if is_flush and is_straight:
-            return (7, straight_high)
-
-        if groups[0][0] == 3 and groups[1][0] == 2:
-            trip_rank = groups[0][1]
-            pair_rank = groups[1][1]
-            return (6, trip_rank, pair_rank)
-
-        if is_flush:
-            return (5, *sorted(ranks, reverse=True))
-
-        if is_straight:
-            return (4, straight_high)
-
-        if groups[0][0] == 3:
-            trip_rank = groups[0][1]
-            kickers = sorted([r for r in ranks if r != trip_rank], reverse=True)
-            return (3, trip_rank, *kickers)
-
-        if groups[0][0] == 2 and groups[1][0] == 2:
-            pair_ranks = sorted([groups[0][1], groups[1][1]], reverse=True)
-            kicker = [r for r in ranks if r not in pair_ranks][0]
-            return (2, pair_ranks[0], pair_ranks[1], kicker)
-
-        if groups[0][0] == 2:
-            pair_rank = groups[0][1]
-            kickers = sorted([r for r in ranks if r != pair_rank], reverse=True)
-            return (1, pair_rank, *kickers)
-
-        return (0, *sorted(ranks, reverse=True))
+        treys_cards = list(map(self.int_to_card, cards5))
+        return self.evaluator.evaluate(treys_cards[:2], treys_cards[2:])
 
     def _score_best_hand(self, hole2, board5):
-        seven = list(hole2) + list(board5)
-        best = None
-        for combo in itertools.combinations(seven, 5):
-            score = self._score_five_card(combo)
-            if best is None or score > best:
-                best = score
-        return best
+        treys_hand = list(map(self.int_to_card, hole2))
+        treys_board = list(map(self.int_to_card, board5))
+        return self.evaluator.evaluate(treys_hand, treys_board)
 
     def _opp_discard_strength_shift(self, opp_discarded_cards):
         shown = [c for c in opp_discarded_cards if c != -1]
@@ -164,7 +212,7 @@ class PlayerAgent(Agent):
         for i, j in itertools.combinations(range(5), 2):
             pair = (hole5[i], hole5[j])
             score = self._score_five_card(list(pair) + list(flop3))
-            if best_score is None or score > best_score:
+            if best_score is None or score < best_score:
                 best_score = score
                 best_pair = pair
         return best_pair
@@ -213,7 +261,7 @@ class PlayerAgent(Agent):
 
             my_score = self._score_best_hand(my_two, board)
             opp_score = self._score_best_hand(opp_two, board)
-            if my_score > opp_score:
+            if my_score < opp_score:
                 wins += 1.0
             elif my_score == opp_score:
                 wins += 0.5
@@ -262,7 +310,7 @@ class PlayerAgent(Agent):
 
             my_score = self._score_best_hand(my_two, board)
             opp_score = self._score_best_hand(opp_two, board)
-            if my_score > opp_score:
+            if my_score < opp_score:
                 wins += 1.0
             elif my_score == opp_score:
                 wins += 0.5
@@ -290,7 +338,7 @@ class PlayerAgent(Agent):
             )
             current_score = self._score_five_card(keep + flop3)
             best_score = self._score_five_card([my_five[best_pair[0]], my_five[best_pair[1]]] + flop3)
-            if eq > best_equity or (abs(eq - best_equity) < 1e-9 and current_score > best_score):
+            if eq > best_equity or (abs(eq - best_equity) < 1e-9 and current_score < best_score):
                 best_equity = eq
                 best_pair = (i, j)
 
@@ -393,10 +441,10 @@ class PlayerAgent(Agent):
             return
 
         opp_score = self._score_best_hand(opp_int, board_int)
-        category = opp_score[0]
+        rank_class = self.evaluator.get_rank_class(opp_score)
         self.stats["showdowns"] += 1
         # Approx bluff proxy: opponent took aggressive action this hand but ended weak.
-        if self.opp_aggressive_this_hand and category <= 1:
+        if self.opp_aggressive_this_hand and rank_class >= 8:
             self.stats["opp_bluff_showdowns"] += 1
 
     def _start_new_hand_if_needed(self, info):
@@ -412,6 +460,11 @@ class PlayerAgent(Agent):
         self.hand_raised = False
         self.opp_aggressive_this_hand = False
 
+        remaining_hands = max(0, self.total_hands - hand_number)
+        safe_margin = self.max_fold_loss_per_hand * remaining_hands
+        if self.cumulative_profit > safe_margin:
+            self.lock_in_mode = True
+
     def act(self, observation, reward, terminated, truncated, info):
         self._start_new_hand_if_needed(info)
         self._update_opponent_action_signal(observation)
@@ -423,6 +476,13 @@ class PlayerAgent(Agent):
         opp_discards = list(observation.get("opp_discarded_cards", [-1, -1, -1]))
 
         start_time = time.perf_counter()
+
+        # Lock in match win: once our lead is mathematically safe under conservative
+        # per-hand fold loss, prefer folding immediately whenever legal.
+        if self.lock_in_mode and valid_actions[self.action_types.FOLD.value]:
+            self.prev_obs = observation
+            print(f"Lock-in mode active: folding hand {self.current_hand_number} to preserve lead.")
+            return (self.action_types.FOLD.value, 0, 0, 0)
 
         # Mandatory discard round.
         if valid_actions[self.action_types.DISCARD.value]:
@@ -503,6 +563,8 @@ class PlayerAgent(Agent):
     def observe(self, observation, reward, terminated, truncated, info):
         if not terminated:
             return
+
+        self.cumulative_profit += reward
 
         self.stats["hands"] += 1
         if self.hand_raised:

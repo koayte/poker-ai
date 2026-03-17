@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "source": "offline_csv_training",
+  "base_thresholds": {
+    "0": {
+      "raise": 0.69,
+      "call": 0.46,
+      "bluff": [
+        0.31,
+        0.4
+      ]
+    },
+    "1": {
+      "raise": 0.68,
+      "call": 0.45,
+      "bluff": [
+        0.3,
+        0.39
+      ]
+    },
+    "2": {
+      "raise": 0.65,
+      "call": 0.43,
+      "bluff": [
+        0.28,
+        0.37
+      ]
+    },
+    "3": {
+      "raise": 0.61,
+      "call": 0.41,
+      "bluff": [
+        0.24,
+        0.33
+      ]
+    }
+  },
+  "simulation_budgets": {
+    "discard": 300,
+    "bet": 300,
+    "preflop": 140
+  },
+  "opponent_priors": {
+    "fold_to_raise": 0.9398572884811417,
+    "aggression": 0.16870220294486932,
+    "bluff_freq": 0.0,
+    "raise_samples": 200,
+    "action_samples": 800,
+    "showdown_samples": 57
+  },
+  "training_summary": {
+    "matches_rows": 18004,
+    "raise_hands": 981,
+    "opp_actions_seen": 8761,
+    "showdowns": 57
+  }
+}
